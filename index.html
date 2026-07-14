@@ -253,6 +253,18 @@
                 <select id="yearFilter" class="filter-select"><option value="">-- ทุกปีงบประมาณ --</option></select>
             </div>
 
+            <!-- 🎯 เพิ่มตัวกรอง การรับรอง GAP ที่นี่ -->
+            <div>
+                <span class="filter-label"><i class="fa-solid fa-certificate"></i> การรับรอง GAP:</span>
+                <select id="gapStatusFilter" class="filter-select">
+                    <option value="">-- ทุกสถานะ --</option>
+                    <option value="ได้แล้ว">ได้แล้ว</option>
+                    <option value="เตรียมเข้ารับ">เตรียมเข้ารับ</option>
+                    <option value="ยังไม่ได้">ยังไม่ได้</option>
+                    <option value="ไม่ระบุ">ไม่ระบุ</option>
+                </select>
+            </div>
+
             <div class="sidebar-buttons">
                 <button type="button" class="btn btn-clear" onclick="clearFilters()"><i class="fa-solid fa-rotate-right"></i> ล้างตัวกรอง</button>
                 <button type="button" class="btn btn-export" onclick="exportToCSV()"><i class="fa-solid fa-file-excel"></i> ดาวน์โหลด Excel</button>
@@ -397,16 +409,19 @@
 
             updateSpdDropdown();
 
+            // 🎯 กำหนดให้ Select2 ทำงานกับ dropdown ทั้งหมด รวมถึงตัวใหม่ด้วย
             $('#spkFilter').select2();
             $('#spdFilter').select2();
             $('#yearFilter').select2();
+            $('#gapStatusFilter').select2();
 
             $('#spkFilter').on('change', function() {
                 updateSpdDropdown();
                 filterLocalData(); 
             });
 
-            $('#spdFilter, #yearFilter').on('change', filterLocalData);
+            // 🎯 ให้ Dropdown ใหม่ ทริกเกอร์การค้นหาเมื่อถูกเปลี่ยนค่าด้วย
+            $('#spdFilter, #yearFilter, #gapStatusFilter').on('change', filterLocalData);
             
             fetchData();
         });
@@ -458,6 +473,7 @@
             $('#spkFilter').val('').trigger('change.select2');
             $('#spdFilter').val('').trigger('change.select2');
             $('#yearFilter').val('').trigger('change.select2');
+            $('#gapStatusFilter').val('').trigger('change.select2'); // ล้างค่าในช่องรับรอง GAP ด้วย
             
             document.getElementById('groupSearch').value = "";
             document.getElementById('farmerSearch').value = "";
@@ -474,6 +490,9 @@
             const fYear = clean($('#yearFilter').val());
             const sGroup = String($('#groupSearch').val() || "").trim().toLowerCase();
             const sFarmer = String($('#farmerSearch').val() || "").trim().toLowerCase();
+            
+            // 🎯 ดึงค่าตัวกรองการรับรอง GAP
+            const fGapStatus = $('#gapStatusFilter').val();
 
             currentFilteredData = globalData.filter(row => {
                 const keys = Object.keys(row);
@@ -496,11 +515,27 @@
                 fullFarmerName = fullFarmerName.toLowerCase();
                 const matchFarmer = sFarmer === "" || fullFarmerName.includes(sFarmer);
 
+                // 🎯 ตรวจสอบเงื่อนไข "การรับรอง GAP"
+                let matchGapStatus = true;
+                if (fGapStatus !== "") {
+                    // หาชื่อคอลัมน์ที่มีคำว่า รับรอง หรือ GAP
+                    const gapKey = keys.find(k => k.includes('รับรอง'));
+                    let gapVal = String(row[gapKey] || "").replace(/\s+/g, '');
+                    
+                    // ถ้าช่องนั้นว่างเปล่า หรือเป็นขีด จะถูกตีความว่าเป็น "ไม่ระบุ"
+                    if (gapVal === "" || gapVal === "-" || gapVal === "null" || gapVal === "undefined") {
+                        gapVal = "ไม่ระบุ";
+                    }
+                    
+                    matchGapStatus = gapVal.includes(fGapStatus.replace(/\s+/g, ''));
+                }
+
                 return (fSpk === "" || spkVal === fSpk) && 
                        (fSpd === "" || spdVal === fSpd) && 
                        (fYear === "" || yearVal.includes(fYear)) && 
                        matchGroup && 
-                       matchFarmer;
+                       matchFarmer &&
+                       matchGapStatus; // เพิ่มเงื่อนไข GAP เข้าไปในการกรอง
             });
 
             updateSummaryCards(currentFilteredData);
