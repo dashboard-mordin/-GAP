@@ -227,8 +227,13 @@
 
         <div class="sidebar-filters">
             <div>
-                <span class="filter-label"><i class="fa-solid fa-magnifying-glass"></i> ค้นหาชื่อกลุ่ม:</span>
+                <span class="filter-label"><i class="fa-solid fa-users"></i> ค้นหาชื่อกลุ่ม:</span>
                 <input type="text" id="groupSearch" class="search-input" placeholder="พิมพ์ชื่อกลุ่มที่ต้องการค้นหา..." onkeyup="filterLocalData()">
+            </div>
+            
+            <div>
+                <span class="filter-label"><i class="fa-solid fa-user"></i> ค้นหาชื่อเกษตรกร:</span>
+                <input type="text" id="farmerSearch" class="search-input" placeholder="พิมพ์ชื่อเกษตรกรที่ต้องการค้นหา..." onkeyup="filterLocalData()">
             </div>
 
             <div style="border-bottom: 1px dashed #ccc; margin: 5px 0;"></div> 
@@ -354,22 +359,18 @@
             "อุทัยธานี": "TH-61", "อุบลราชธานี": "TH-34"
         };
 
-        // 🎯 ฟังก์ชันดักจับคอลัมน์ที่ไม่ต้องการแบบเด็ดขาด (อัปเดตขั้นสุด)
         function filterAllowedHeaders(rawHeaders) {
             return rawHeaders.filter(h => {
                 const text = String(h);
-                // ตัดช่องว่าง วงเล็บ เครื่องหมายทับ ออกให้หมดเพื่อเช็คให้ชัวร์ที่สุด
                 const cleanText = text.replace(/[\s\(\)\/\.\-]/g, '');
                 
-                // ใช้การเช็คคำแบบกวาด (ถ้ามีคำเหล่านี้โผล่มา ซ่อนทันที)
                 if (cleanText.includes("ประทับเวลา")) return false;
                 if (cleanText.includes("เบอร์โทร")) return false;
                 if (cleanText.includes("เลขที่บ้าน")) return false;
                 if (cleanText.includes("ละติจูด")) return false;
                 if (cleanText.includes("ลองจิจูด")) return false;
-                if (cleanText.includes("หมู่")) return false; // ซ่อนหมู่บ้านด้วย
+                if (cleanText.includes("หมู่") && !cleanText.includes("หมวด")) return false; 
                 
-                // ❌ ลบคอลัมน์ ปุ๋ยเคมี / ปุ๋ยหมัก / น้ำหมัก / สารเคมี / วัสดุ แบบเด็ดขาด ❌
                 if (cleanText.includes("ปุ๋ย")) return false;
                 if (cleanText.includes("เคมี")) return false;
                 if (cleanText.includes("หมัก")) return false;
@@ -458,22 +459,46 @@
             updateSpdDropdown();
             $('#yearFilter').val('').trigger('change.select2');
             document.getElementById('groupSearch').value = "";
+            document.getElementById('farmerSearch').value = "";
             filterLocalData();
         }
 
         function filterLocalData() {
             if(!globalData.length) return;
             const clean = (t) => String(t || "").replace(/\s+/g, '').toLowerCase();
-            const fSpk = clean($('#spkFilter').val()), fSpd = clean($('#spdFilter').val()).replace('สพด.', ''), fYear = clean($('#yearFilter').val()), sText = String($('#groupSearch').val() || "").trim().toLowerCase();
+            const fSpk = clean($('#spkFilter').val());
+            const fSpd = clean($('#spdFilter').val()).replace('สพด.', '');
+            const fYear = clean($('#yearFilter').val());
+            const sGroup = String($('#groupSearch').val() || "").trim().toLowerCase();
+            const sFarmer = String($('#farmerSearch').val() || "").trim().toLowerCase();
 
             currentFilteredData = globalData.filter(row => {
                 const keys = Object.keys(row);
                 const spkVal = clean(row[keys.find(k => k.includes('สพข')) || "สพข."]);
-                const spdVal = clean(row[keys.find(k => k.includes('สพด') || k.includes('จังหวัด')) || "спд."]).replace('สพด.', '');
+                const spdVal = clean(row[keys.find(k => k.includes('สพด') || k.includes('จังหวัด')) || "спด."]).replace('สพด.', '');
                 const yearVal = clean(row[keys.find(k => k.includes('ปี')) || "ปี"]);
+                
                 const groupVal = String(row[keys.find(k => k.includes('กลุ่ม')) || "ชื่อกลุ่ม"] || "").toLowerCase();
+                const matchGroup = sGroup === "" || groupVal.includes(sGroup);
 
-                return (fSpk === "" || spkVal === fSpk) && (fSpd === "" || spdVal === fSpd) && (fYear === "" || yearVal.includes(fYear)) && (sText === "" || groupVal.includes(sText));
+                // ตรวจสอบชื่อเกษตรกร
+                const prefixKey = keys.find(k => k.includes('คำนำหน้าชื่อ') && !k.includes('ผู้รับผิดชอบ'));
+                const firstNameKey = keys.find(k => k.includes('ชื่อจริง') || (k.includes('ชื่อ') && !k.includes('กลุ่ม') && !k.includes('ผู้รับผิดชอบ')));
+                const lastNameKey = keys.find(k => k.includes('นามสกุล') && !k.includes('ผู้รับผิดชอบ'));
+
+                let fullFarmerName = "";
+                if(prefixKey) fullFarmerName += String(row[prefixKey] || "") + " ";
+                if(firstNameKey) fullFarmerName += String(row[firstNameKey] || "") + " ";
+                if(lastNameKey) fullFarmerName += String(row[lastNameKey] || "");
+                
+                fullFarmerName = fullFarmerName.toLowerCase();
+                const matchFarmer = sFarmer === "" || fullFarmerName.includes(sFarmer);
+
+                return (fSpk === "" || spkVal === fSpk) && 
+                       (fSpd === "" || spdVal === fSpd) && 
+                       (fYear === "" || yearVal.includes(fYear)) && 
+                       matchGroup && 
+                       matchFarmer;
             });
 
             updateSummaryCards(currentFilteredData);
@@ -649,8 +674,23 @@
                         tooltip: { callbacks: { label: function(context) { return ` ${context.raw.toLocaleString()} ราย`; } } }
                     },
                     scales: {
-                        x: { beginAtZero: true, ticks: { font: { family: 'Sarabun' } } },
-                        y: { ticks: { font: { family: 'Sarabun' } } }
+                        x: { 
+                            beginAtZero: true, 
+                            ticks: { font: { family: 'Sarabun' } },
+                            title: {
+                                display: true,
+                                text: 'จำนวน (ราย)',
+                                font: { family: 'Sarabun', size: 14, weight: 'bold' }
+                            }
+                        },
+                        y: { 
+                            ticks: { font: { family: 'Sarabun' } },
+                            title: {
+                                display: true,
+                                text: 'ชนิดพืชที่ปลูก',
+                                font: { family: 'Sarabun', size: 14, weight: 'bold' }
+                            }
+                        }
                     }
                 }
             });
@@ -669,8 +709,6 @@
             }
             
             const rawHeaders = Object.keys(data[0]);
-            
-            // 🎯 กรองคอลัมน์ที่ไม่ต้องการออก
             const allowedHeaders = filterAllowedHeaders(rawHeaders);
             
             thead.innerHTML = `<tr>${allowedHeaders.map(h => `<th>${h}</th>`).join('')}</tr>`;
@@ -691,7 +729,6 @@
             if (!currentFilteredData.length) return alert("ไม่มีข้อมูลให้ส่งออก");
             const rawHeaders = Object.keys(currentFilteredData[0]);
             
-            // 🎯 กรองคอลัมน์ออกก่อนโหลดเป็นไฟล์ Excel เช่นกัน
             const allowedHeaders = filterAllowedHeaders(rawHeaders);
             
             let csv = "\ufeff" + allowedHeaders.join(",") + "\n";
