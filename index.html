@@ -454,7 +454,6 @@
             }
         }
 
-        // 🎯 แก้ไขให้การล้างตัวกรองล้างช่อง สพด. อย่างถูกต้อง
         function clearFilters() {
             $('#spkFilter').val('').trigger('change.select2');
             $('#spdFilter').val('').trigger('change.select2');
@@ -485,7 +484,6 @@
                 const groupVal = String(row[keys.find(k => k.includes('กลุ่ม')) || "ชื่อกลุ่ม"] || "").toLowerCase();
                 const matchGroup = sGroup === "" || groupVal.includes(sGroup);
 
-                // ตรวจสอบชื่อเกษตรกร
                 const prefixKey = keys.find(k => k.includes('คำนำหน้าชื่อ') && !k.includes('ผู้รับผิดชอบ'));
                 const firstNameKey = keys.find(k => k.includes('ชื่อจริง') || (k.includes('ชื่อ') && !k.includes('กลุ่ม') && !k.includes('ผู้รับผิดชอบ')));
                 const lastNameKey = keys.find(k => k.includes('นามสกุล') && !k.includes('ผู้รับผิดชอบ'));
@@ -683,7 +681,7 @@
                             ticks: { font: { family: 'Sarabun' } },
                             title: {
                                 display: true,
-                                text: 'จำนวน (ราย)',
+                                text: 'จำนวนเกษตรกร (ราย)',
                                 font: { family: 'Sarabun', size: 14, weight: 'bold' }
                             }
                         },
