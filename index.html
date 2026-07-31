@@ -228,12 +228,14 @@
         <div class="sidebar-filters">
             <div>
                 <span class="filter-label"><i class="fa-solid fa-users"></i> ค้นหาชื่อกลุ่ม:</span>
-                <input type="text" id="groupSearch" class="search-input" placeholder="พิมพ์ชื่อกลุ่มที่ต้องการค้นหา..." onkeyup="filterLocalData()">
+                <!-- 🚀 เปลี่ยนไปเรียกฟังก์ชัน debounce เพื่อความรวดเร็ว -->
+                <input type="text" id="groupSearch" class="search-input" placeholder="พิมพ์ชื่อกลุ่มที่ต้องการค้นหา..." onkeyup="debounceFilter()">
             </div>
             
             <div>
                 <span class="filter-label"><i class="fa-solid fa-user"></i> ค้นหาชื่อเกษตรกร:</span>
-                <input type="text" id="farmerSearch" class="search-input" placeholder="พิมพ์ชื่อเกษตรกรที่ต้องการค้นหา..." onkeyup="filterLocalData()">
+                <!-- 🚀 เปลี่ยนไปเรียกฟังก์ชัน debounce เพื่อความรวดเร็ว -->
+                <input type="text" id="farmerSearch" class="search-input" placeholder="พิมพ์ชื่อเกษตรกรที่ต้องการค้นหา..." onkeyup="debounceFilter()">
             </div>
 
             <div style="border-bottom: 1px dashed #ccc; margin: 5px 0;"></div> 
@@ -253,7 +255,6 @@
                 <select id="yearFilter" class="filter-select"><option value="">-- ทุกปีงบประมาณ --</option></select>
             </div>
 
-            <!-- 🎯 เพิ่มตัวกรอง การรับรอง GAP ที่นี่ -->
             <div>
                 <span class="filter-label"><i class="fa-solid fa-certificate"></i> การรับรอง GAP:</span>
                 <select id="gapStatusFilter" class="filter-select">
@@ -397,6 +398,13 @@
         let soilChart = null, cropChart = null;
         let isMapReady = false; 
 
+        // 🚀 เพิ่มระบบ Debounce (หน่วงเวลาพิมพ์) เพื่อไม่ให้เว็บกระตุก
+        let searchTimeout;
+        function debounceFilter() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(filterLocalData, 300); // รอผู้ใช้พิมพ์เสร็จ 0.3 วิ ค่อยกรองข้อมูล
+        }
+
         google.charts.load('current', { 'packages': ['geochart'] });
         google.charts.setOnLoadCallback(function() {
             isMapReady = true;
@@ -409,7 +417,6 @@
 
             updateSpdDropdown();
 
-            // 🎯 กำหนดให้ Select2 ทำงานกับ dropdown ทั้งหมด รวมถึงตัวใหม่ด้วย
             $('#spkFilter').select2();
             $('#spdFilter').select2();
             $('#yearFilter').select2();
@@ -420,7 +427,6 @@
                 filterLocalData(); 
             });
 
-            // 🎯 ให้ Dropdown ใหม่ ทริกเกอร์การค้นหาเมื่อถูกเปลี่ยนค่าด้วย
             $('#spdFilter, #yearFilter, #gapStatusFilter').on('change', filterLocalData);
             
             fetchData();
@@ -454,6 +460,17 @@
         async function fetchData() {
             const b = document.getElementById('dataTableBody');
             try {
+                // ดึงข้อมูลจาก Cache ในเครื่องก่อน
+                const cachedData = sessionStorage.getItem('gapDataCache');
+                const cacheTime = sessionStorage.getItem('gapDataCacheTime');
+                const now = new Date().getTime();
+
+                if (cachedData && cacheTime && (now - parseInt(cacheTime) < 3600000)) {
+                    globalData = JSON.parse(cachedData);
+                    filterLocalData();
+                    return; 
+                }
+
                 const res = await fetch(API_URL);
                 if (!res.ok) throw new Error(`การเชื่อมต่อมีปัญหา`);
                 const textData = await res.text();
@@ -463,9 +480,17 @@
                 if (raw.error) throw new Error(raw.error);
 
                 globalData = raw.filter(r => Object.values(r).some(v => String(v).trim() !== ""));
+                
+                try {
+                    sessionStorage.setItem('gapDataCache', JSON.stringify(globalData));
+                    sessionStorage.setItem('gapDataCacheTime', now.toString());
+                } catch (e) {
+                    console.warn("ข้ามการบันทึก Cache เนื่องจากข้อมูลใหญ่เกินไป");
+                }
+
                 filterLocalData();
             } catch (e) { 
-                b.innerHTML = `<tr><td colspan="100%" style="text-align: center; color: #e74c3c; padding: 30px;"><i class="fa-solid fa-triangle-exclamation"></i> โหลดข้อมูลไม่สำเร็จ กรุณาเช็คอินเทอร์เน็ต</td></tr>`;
+                b.innerHTML = `<tr><td colspan="100%" style="text-align: center; color: #e74c3c; padding: 30px;"><i class="fa-solid fa-triangle-exclamation"></i> โหลดข้อมูลไม่สำเร็จ กรุณาตรวจสอบอินเทอร์เน็ต</td></tr>`;
             }
         }
 
@@ -473,7 +498,7 @@
             $('#spkFilter').val('').trigger('change.select2');
             $('#spdFilter').val('').trigger('change.select2');
             $('#yearFilter').val('').trigger('change.select2');
-            $('#gapStatusFilter').val('').trigger('change.select2'); // ล้างค่าในช่องรับรอง GAP ด้วย
+            $('#gapStatusFilter').val('').trigger('change.select2');
             
             document.getElementById('groupSearch').value = "";
             document.getElementById('farmerSearch').value = "";
@@ -490,43 +515,42 @@
             const fYear = clean($('#yearFilter').val());
             const sGroup = String($('#groupSearch').val() || "").trim().toLowerCase();
             const sFarmer = String($('#farmerSearch').val() || "").trim().toLowerCase();
-            
-            // 🎯 ดึงค่าตัวกรองการรับรอง GAP
             const fGapStatus = $('#gapStatusFilter').val();
 
+            // 🚀 [ความลับของความเร็ว] ย้ายการค้นหาชื่อคอลัมน์ออกมาไว้นอก Loop 
+            const keys = Object.keys(globalData[0] || {});
+            const keySpk = keys.find(k => k.includes('สพข')) || "สพข.";
+            const keySpd = keys.find(k => k.includes('สพด') || k.includes('จังหวัด')) || "สพด.";
+            const keyYear = keys.find(k => k.includes('ปี')) || "ปี";
+            const keyGroup = keys.find(k => k.includes('กลุ่ม')) || "ชื่อกลุ่ม";
+            const keyPrefix = keys.find(k => k.includes('คำนำหน้าชื่อ') && !k.includes('ผู้รับผิดชอบ'));
+            const keyFirstName = keys.find(k => k.includes('ชื่อจริง') || (k.includes('ชื่อ') && !k.includes('กลุ่ม') && !k.includes('ผู้รับผิดชอบ')));
+            const keyLastName = keys.find(k => k.includes('นามสกุล') && !k.includes('ผู้รับผิดชอบ'));
+            const keyGap = keys.find(k => k.includes('รับรอง'));
+
             currentFilteredData = globalData.filter(row => {
-                const keys = Object.keys(row);
-                const spkVal = clean(row[keys.find(k => k.includes('สพข')) || "สพข."]);
-                const spdVal = clean(row[keys.find(k => k.includes('สพด') || k.includes('จังหวัด')) || "спด."]).replace('สพด.', '');
-                const yearVal = clean(row[keys.find(k => k.includes('ปี')) || "ปี"]);
+                // 🚀 ใช้ค่า key คงที่ ช่วยลดการค้นหาซ้ำซ้อน 80,000 รอบ ทำให้ทำงานแทบจะในพริบตา!
+                const spkVal = clean(row[keySpk]);
+                const spdVal = clean(row[keySpd]).replace('สพด.', '');
+                const yearVal = clean(row[keyYear]);
                 
-                const groupVal = String(row[keys.find(k => k.includes('กลุ่ม')) || "ชื่อกลุ่ม"] || "").toLowerCase();
+                const groupVal = String(row[keyGroup] || "").toLowerCase();
                 const matchGroup = sGroup === "" || groupVal.includes(sGroup);
 
-                const prefixKey = keys.find(k => k.includes('คำนำหน้าชื่อ') && !k.includes('ผู้รับผิดชอบ'));
-                const firstNameKey = keys.find(k => k.includes('ชื่อจริง') || (k.includes('ชื่อ') && !k.includes('กลุ่ม') && !k.includes('ผู้รับผิดชอบ')));
-                const lastNameKey = keys.find(k => k.includes('นามสกุล') && !k.includes('ผู้รับผิดชอบ'));
-
                 let fullFarmerName = "";
-                if(prefixKey) fullFarmerName += String(row[prefixKey] || "") + " ";
-                if(firstNameKey) fullFarmerName += String(row[firstNameKey] || "") + " ";
-                if(lastNameKey) fullFarmerName += String(row[lastNameKey] || "");
+                if(keyPrefix) fullFarmerName += String(row[keyPrefix] || "") + " ";
+                if(keyFirstName) fullFarmerName += String(row[keyFirstName] || "") + " ";
+                if(keyLastName) fullFarmerName += String(row[keyLastName] || "");
                 
                 fullFarmerName = fullFarmerName.toLowerCase();
                 const matchFarmer = sFarmer === "" || fullFarmerName.includes(sFarmer);
 
-                // 🎯 ตรวจสอบเงื่อนไข "การรับรอง GAP"
                 let matchGapStatus = true;
                 if (fGapStatus !== "") {
-                    // หาชื่อคอลัมน์ที่มีคำว่า รับรอง หรือ GAP
-                    const gapKey = keys.find(k => k.includes('รับรอง'));
-                    let gapVal = String(row[gapKey] || "").replace(/\s+/g, '');
-                    
-                    // ถ้าช่องนั้นว่างเปล่า หรือเป็นขีด จะถูกตีความว่าเป็น "ไม่ระบุ"
+                    let gapVal = String(row[keyGap] || "").replace(/\s+/g, '');
                     if (gapVal === "" || gapVal === "-" || gapVal === "null" || gapVal === "undefined") {
                         gapVal = "ไม่ระบุ";
                     }
-                    
                     matchGapStatus = gapVal.includes(fGapStatus.replace(/\s+/g, ''));
                 }
 
@@ -535,7 +559,7 @@
                        (fYear === "" || yearVal.includes(fYear)) && 
                        matchGroup && 
                        matchFarmer &&
-                       matchGapStatus; // เพิ่มเงื่อนไข GAP เข้าไปในการกรอง
+                       matchGapStatus;
             });
 
             updateSummaryCards(currentFilteredData);
@@ -679,7 +703,13 @@
             
             data.forEach(r => {
                 let p = String(r[key] || "").trim();
-                if(p === "" || p === "-" || p === "null" || p === "undefined") p = "ไม่ระบุ";
+                if(p === "" || p === "-" || p === "null" || p === "undefined") {
+                    p = "ไม่ระบุ";
+                } else {
+                    if (p === "นาข้าว" || p === "ทำนา") {
+                        p = "ข้าว";
+                    }
+                }
                 counts[p] = (counts[p] || 0) + 1;
             });
 
