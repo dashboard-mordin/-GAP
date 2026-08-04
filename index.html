@@ -177,10 +177,11 @@
             <div class="table-responsive">
                 <table id="dataTable">
                     <thead id="tableHead">
-                        <tr><th>สังกัด สพข.</th><th>จังหวัด สพด.</th><th>ปีงบประมาณ</th><th>ชื่อกลุ่ม</th><th>คำนำหน้า</th><th>ชื่อจริง</th><th>นามสกุล</th><th>พืชที่ปลูก</th><th>พื้นที่ (ไร่)</th><th>การรับรอง GAP</th><th>สถานะหมอดินอาสา</th></tr>
+                        <!-- 🎯 ยุบรวมคอลัมน์ชื่อจริงและนามสกุลเป็น "ชื่อ-นามสกุล" -->
+                        <tr><th>สังกัด สพข.</th><th>จังหวัด สพด.</th><th>ปีงบประมาณ</th><th>ชื่อกลุ่ม</th><th>คำนำหน้า</th><th>ชื่อ-นามสกุล</th><th>พืชที่ปลูก</th><th>พื้นที่ (ไร่)</th><th>การรับรอง GAP</th><th>สถานะหมอดินอาสา</th></tr>
                     </thead>
                     <tbody id="dataTableBody">
-                        <tr><td colspan="11" style="text-align: center; color: #2980b9; padding: 40px; font-size: 16px;"><b><i class="fa-solid fa-circle-notch fa-spin"></i> กำลังโหลดข้อมูล... โปรดรอสักครู่ (โหลดข้อมูลขนาดใหญ่)</b></td></tr>
+                        <tr><td colspan="10" style="text-align: center; color: #2980b9; padding: 40px; font-size: 16px;"><b><i class="fa-solid fa-circle-notch fa-spin"></i> กำลังโหลดข้อมูล... โปรดรอสักครู่ (โหลดข้อมูลขนาดใหญ่)</b></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -288,7 +289,6 @@
         async function fetchData() {
             const b = document.getElementById('dataTableBody');
             try {
-                // เซฟไว้ใน Cache เบราว์เซอร์ จะได้โหลดครั้งถัดไปใน 0.1 วินาที
                 const cachedData = sessionStorage.getItem('gapFastCache');
                 const cacheTime = sessionStorage.getItem('gapFastCacheTime');
                 const now = new Date().getTime();
@@ -308,7 +308,7 @@
                 let raw = JSON.parse(textData);
                 if (raw.error) throw new Error(raw.error);
 
-                globalData = raw; // รับมาเป็น Array [ [...], [...] ] เลย
+                globalData = raw;
 
                 try {
                     sessionStorage.setItem('gapFastCache', JSON.stringify(globalData));
@@ -319,7 +319,7 @@
 
                 filterLocalData();
             } catch (e) { 
-                b.innerHTML = `<tr><td colspan="11" style="text-align: center; color: #e74c3c; padding: 30px;"><i class="fa-solid fa-triangle-exclamation"></i> โหลดข้อมูลไม่สำเร็จ กรุณาเช็คอินเทอร์เน็ต</td></tr>`;
+                b.innerHTML = `<tr><td colspan="10" style="text-align: center; color: #e74c3c; padding: 30px;"><i class="fa-solid fa-triangle-exclamation"></i> โหลดข้อมูลไม่สำเร็จ กรุณาเช็คอินเทอร์เน็ต</td></tr>`;
             }
         }
 
@@ -347,8 +347,6 @@
             const fGapStatus = $('#gapStatusFilter').val();
 
             currentFilteredData = globalData.filter(row => {
-                // อ้างอิงตาม Array Index ที่จัดมาจาก Apps Script:
-                // 0:สพข, 1:สพด, 2:ปี, 3:กลุ่ม, 4:คำนำ, 5:ชื่อ, 6:สกุล, 7:พืช, 8:พื้นที่, 9:GAP, 10:หมอดิน
                 const spkVal = clean(row[0]);
                 const spdVal = clean(row[1]).replace('สพด.', '');
                 const yearVal = clean(row[2]);
@@ -485,7 +483,7 @@
             const notice = document.getElementById('tableNotice');
 
             if (!data.length) { 
-                tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; color: red; padding: 30px;"><i class="fa-solid fa-magnifying-glass-minus"></i> ไม่พบข้อมูลที่ตรงกับเงื่อนไขการค้นหา</td></tr>'; 
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: red; padding: 30px;"><i class="fa-solid fa-magnifying-glass-minus"></i> ไม่พบข้อมูลที่ตรงกับเงื่อนไขการค้นหา</td></tr>'; 
                 notice.innerHTML = ""; 
                 return; 
             }
@@ -493,19 +491,31 @@
             const limit = 200;
             const displayData = data.slice(0, limit);
             
-            tbody.innerHTML = displayData.map(row => `<tr>
-                <td>${row[0] || '-'}</td>
-                <td>${row[1] || '-'}</td>
-                <td>${row[2] || '-'}</td>
-                <td>${row[3] || '-'}</td>
-                <td>${row[4] || '-'}</td>
-                <td>${row[5] || '-'}</td>
-                <td>${row[6] || '-'}</td>
-                <td>${row[7] || '-'}</td>
-                <td>${row[8] || '-'}</td>
-                <td>${row[9] || '-'}</td>
-                <td>${row[10] || '-'}</td>
-            </tr>`).join('');
+            tbody.innerHTML = displayData.map(row => {
+                // 🎯 ลอจิกการยุบรวมชื่อ-นามสกุล
+                let fname = String(row[5] || "").trim();
+                let lname = String(row[6] || "").trim();
+                let fullName = fname;
+                
+                // ถ้านามสกุลไม่ใช่ค่าว่าง, ไม่ใช่ขีด และยังไม่มีอยู่ในชื่อจริง ให้เอามาต่อกัน
+                if (lname !== "" && lname !== "-" && !fname.includes(lname)) {
+                    fullName += " " + lname;
+                }
+                if (fullName === "") fullName = "-";
+
+                return `<tr>
+                    <td>${row[0] || '-'}</td>
+                    <td>${row[1] || '-'}</td>
+                    <td>${row[2] || '-'}</td>
+                    <td>${row[3] || '-'}</td>
+                    <td>${row[4] || '-'}</td>
+                    <td>${fullName}</td>
+                    <td>${row[7] || '-'}</td>
+                    <td>${row[8] || '-'}</td>
+                    <td>${row[9] || '-'}</td>
+                    <td>${row[10] || '-'}</td>
+                </tr>`;
+            }).join('');
             
             if (data.length > limit) {
                 notice.innerHTML = `<b>สรุปผลการค้นหาพบ <span style="font-size: 18px;">${data.length.toLocaleString()}</span> ราย</b><br><span style="color: #666;">* ตารางด้านบนแสดงตัวอย่างเพียง 200 รายการแรก (กรุณากดดาวน์โหลด Excel ที่เมนูด้านซ้ายเพื่อดูข้อมูลทั้งหมดอย่างละเอียด)</span>`;
@@ -517,9 +527,19 @@
         function exportToCSV() {
             if (!currentFilteredData.length) return alert("ไม่มีข้อมูลให้ส่งออก");
             
-            let csv = "\ufeffสังกัด สพข.,จังหวัด สพด.,ปีงบประมาณ,ชื่อกลุ่ม,คำนำหน้า,ชื่อจริง,นามสกุล,พืชที่ปลูก,พื้นที่ (ไร่),การรับรอง GAP,สถานะหมอดินอาสา\n";
+            // 🎯 อัปเดตหัวข้อ Excel ให้เป็น ชื่อ-นามสกุล ด้วยเช่นกัน
+            let csv = "\ufeffสังกัด สพข.,จังหวัด สพด.,ปีงบประมาณ,ชื่อกลุ่ม,คำนำหน้า,ชื่อ-นามสกุล,พืชที่ปลูก,พื้นที่ (ไร่),การรับรอง GAP,สถานะหมอดินอาสา\n";
             currentFilteredData.forEach(row => {
-                csv += `"${row[0]}","${row[1]}","${row[2]}","${row[3]}","${row[4]}","${row[5]}","${row[6]}","${row[7]}","${row[8]}","${row[9]}","${row[10]}"\n`;
+                let fname = String(row[5] || "").trim();
+                let lname = String(row[6] || "").trim();
+                let fullName = fname;
+                
+                if (lname !== "" && lname !== "-" && !fname.includes(lname)) {
+                    fullName += " " + lname;
+                }
+                if (fullName === "") fullName = "-";
+
+                csv += `"${row[0]}","${row[1]}","${row[2]}","${row[3]}","${row[4]}","${fullName}","${row[7]}","${row[8]}","${row[9]}","${row[10]}"\n`;
             });
             const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
             const link = document.createElement("a");
