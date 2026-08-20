@@ -140,6 +140,16 @@
                 </select>
             </div>
 
+            <!-- 🎯 เพิ่มตัวกรองสถานะหมอดินอาสาตรงนี้ -->
+            <div>
+                <span class="filter-label"><i class="fa-solid fa-user-doctor"></i> สถานะการเป็นหมอดินอาสา:</span>
+                <select id="soilStatusFilter" class="filter-select">
+                    <option value="">-- ทุกสถานะ --</option>
+                    <option value="เป็น">เป็น</option>
+                    <option value="ไม่เป็น">ไม่เป็น</option>
+                </select>
+            </div>
+
             <div class="sidebar-buttons">
                 <button type="button" class="btn btn-clear" onclick="clearFilters()"><i class="fa-solid fa-rotate-right"></i> ล้างตัวกรอง</button>
                 <button type="button" class="btn btn-export" onclick="exportToCSV()"><i class="fa-solid fa-file-excel"></i> ดาวน์โหลด Excel</button>
@@ -244,7 +254,7 @@
             "อุทัยธานี": "TH-61", "อุบลราชธานี": "TH-34"
         };
 
-        // 🚨 นำลิงก์ URL ที่ได้ใหม่จากการ Deploy มาวางที่นี่
+        // 🚨 นำลิงก์ URL ของคุณมาวางตรงนี้
         const API_URL = "https://script.google.com/macros/s/AKfycbx631E3NkKdEE_oSbz6Fiwi30_s2sf3QiNsobrP7Hy2ZjClRcwo2ngkmVHEX_OUaTaC3A/exec";
         
         let globalData = [];
@@ -270,13 +280,15 @@
 
             updateSpdDropdown();
 
+            // 🎯 เปิดใช้งาน Select2 ให้กับตัวกรองทั้งหมด รวมถึงตัวใหม่
             $('#spkFilter').select2();
             $('#spdFilter').select2();
             $('#yearFilter').select2();
             $('#gapStatusFilter').select2();
+            $('#soilStatusFilter').select2();
 
             $('#spkFilter').on('change', function() { updateSpdDropdown(); processAndDrawDashboards(); });
-            $('#spdFilter, #yearFilter, #gapStatusFilter').on('change', processAndDrawDashboards);
+            $('#spdFilter, #yearFilter, #gapStatusFilter, #soilStatusFilter').on('change', processAndDrawDashboards);
             
             fetchData();
         });
@@ -307,8 +319,7 @@
         async function fetchData() {
             const b = document.getElementById('dataTableBody');
             try {
-                // ผมเอาระบบ Cache ของเบราว์เซอร์ออกไปเลยเพื่อดึงข้อมูลสดๆ จากเซิร์ฟเวอร์ที่เร็วขึ้นแล้ว 
-                // ช่วยป้องกันปัญหาเว็บค้างและมั่นใจว่าได้ข้อมูลใหม่เสมอ
+                // ผมเอาระบบ Cache ออกชั่วคราวเพื่อดึงข้อมูลสดๆ จากเซิร์ฟเวอร์
                 const res = await fetch(API_URL);
                 if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
                 
@@ -330,10 +341,12 @@
         }
 
         function clearFilters() {
+            // 🎯 เคลียร์ตัวกรองใหม่ด้วย
             $('#spkFilter').val('').trigger('change.select2');
             $('#spdFilter').val('').trigger('change.select2');
             $('#yearFilter').val('').trigger('change.select2');
             $('#gapStatusFilter').val('').trigger('change.select2');
+            $('#soilStatusFilter').val('').trigger('change.select2');
             
             document.getElementById('groupSearch').value = "";
             document.getElementById('farmerSearch').value = "";
@@ -352,6 +365,7 @@
             const sGroup = String($('#groupSearch').val() || "").trim().toLowerCase();
             const sFarmer = String($('#farmerSearch').val() || "").trim().toLowerCase();
             const fGapStatus = $('#gapStatusFilter').val();
+            const fSoilStatus = $('#soilStatusFilter').val(); // 🎯 ดึงค่าจากตัวกรองใหม่
 
             currentFilteredData = [];
             let totalAreaRai = 0;
@@ -369,12 +383,10 @@
                 let spdVal = clean(spdValRaw).replace('สพด.', '');
                 let yearVal = clean(row[7] || "");
                 
-                // คอลัมน์ 6 = ชื่อกลุ่ม
                 let groupValRaw = String(row[6] || "").trim();
                 let groupVal = groupValRaw.toLowerCase();
                 let matchGroup = sGroup === "" || groupVal.includes(sGroup);
 
-                // คอลัมน์ 4, 5 = คำนำหน้า + ชื่อเกษตรกร
                 let fullFarmerSearch = String(row[4] || "") + " " + String(row[5] || "");
                 let matchFarmer = sFarmer === "" || fullFarmerSearch.toLowerCase().includes(sFarmer);
 
@@ -386,10 +398,20 @@
                     matchGapStatus = gapVal.includes(fGapStatus.replace(/\s+/g, ''));
                 }
 
+                // 🎯 เช็คเงื่อนไขสถานะหมอดินอาสา (ช่อง 10) ให้ทำงานตรงกับกราฟวงกลม
+                let soilValRaw = String(row[10] || "").trim();
+                let soilValCalc = (soilValRaw === "" || soilValRaw === "-" || soilValRaw === "ไม่เป็น" || soilValRaw === "null" || soilValRaw === "undefined") ? "ไม่เป็น" : "เป็น";
+                
+                let matchSoilStatus = true;
+                if (fSoilStatus !== "") {
+                    matchSoilStatus = (soilValCalc === fSoilStatus);
+                }
+
+                // นำเงื่อนไข matchSoilStatus มาดักจับการแสดงผลด้วย
                 if ((fSpk === "" || spkVal === fSpk) && 
                     (fSpd === "" || spdVal === fSpd) && 
                     (fYear === "" || yearVal.includes(fYear)) && 
-                    matchGroup && matchFarmer && matchGapStatus) {
+                    matchGroup && matchFarmer && matchGapStatus && matchSoilStatus) {
                     
                     currentFilteredData.push(row);
 
@@ -410,8 +432,7 @@
                     }
 
                     // 3. Soil Chart
-                    let s = String(row[10] || "").trim();
-                    (s === "" || s === "-" || s === "ไม่เป็น" || s === "null" || s === "undefined") ? soilCounts["ไม่เป็น"]++ : soilCounts["เป็น"]++;
+                    soilCounts[soilValCalc]++;
 
                     // 4. Crop Chart
                     let p = String(row[14] || "").trim();
