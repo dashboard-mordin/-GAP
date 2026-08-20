@@ -75,10 +75,9 @@
         
         .table-responsive { max-height: 450px; overflow: auto; border-radius: 8px; border: 1px solid #ddd; background: white; box-shadow: inset 0 0 5px rgba(0,0,0,0.02); }
         
-        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        table { width: 100%; border-collapse: collapse; font-size: 14px; white-space: nowrap; }
         th, td { padding: 12px 15px; border: 1px solid #eee; text-align: left; }
-        th { background-color: #265932; color: #fffdf2; font-weight: bold; position: sticky; top: 0; z-index: 10; white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        td { white-space: nowrap; } 
+        th { background-color: #265932; color: #fffdf2; font-weight: bold; position: sticky; top: 0; z-index: 10; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         tr:nth-child(even) { background-color: #fcfcfc; }
         tr:hover { background-color: #f1f8e9; }
         
@@ -177,11 +176,29 @@
             <div class="table-responsive">
                 <table id="dataTable">
                     <thead id="tableHead">
-                        <!-- 🎯 ยุบรวมคอลัมน์ชื่อจริงและนามสกุลเป็น "ชื่อ-นามสกุล" -->
-                        <tr><th>สังกัด สพข.</th><th>จังหวัด สพด.</th><th>ปีงบประมาณ</th><th>ชื่อกลุ่ม</th><th>คำนำหน้า</th><th>ชื่อ-นามสกุล</th><th>พืชที่ปลูก</th><th>พื้นที่ (ไร่)</th><th>การรับรอง GAP</th><th>สถานะหมอดินอาสา</th></tr>
+                        <tr>
+                            <th>สพข.</th>
+                            <th>สพด.</th>
+                            <th>คำนำหน้าผู้รับผิดชอบ</th>
+                            <th>ชื่อผู้รับผิดชอบ</th>
+                            <th>คำนำหน้าเกษตรกร</th>
+                            <th>ชื่อเกษตรกร</th>
+                            <th>ชื่อกลุ่ม</th>
+                            <th>ปีที่เข้าร่วมโครงการฯ</th>
+                            <th>สถานะของกลุ่ม</th>
+                            <th>สถานะในกลุ่มของเกษตรกร</th>
+                            <th>สถานะการเป็นหมอดินอาสา</th>
+                            <th>ตำบล</th>
+                            <th>อำเภอ</th>
+                            <th>จังหวัด</th>
+                            <th>พืชที่ปลูก</th>
+                            <th>พื้นที่ทำการเกษตร (ไร่)</th>
+                            <th>การรับรอง GAP</th>
+                            <th>ชนิดพืช GAP</th>
+                        </tr>
                     </thead>
                     <tbody id="dataTableBody">
-                        <tr><td colspan="10" style="text-align: center; color: #2980b9; padding: 40px; font-size: 16px;"><b><i class="fa-solid fa-circle-notch fa-spin"></i> กำลังโหลดข้อมูล... โปรดรอสักครู่ (โหลดข้อมูลขนาดใหญ่)</b></td></tr>
+                        <tr><td colspan="18" style="text-align: center; color: #2980b9; padding: 40px; font-size: 16px;"><b><i class="fa-solid fa-circle-notch fa-spin"></i> กำลังโหลดข้อมูลมหาศาล... โปรดรอสักครู่</b></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -227,6 +244,7 @@
             "อุทัยธานี": "TH-61", "อุบลราชธานี": "TH-34"
         };
 
+        // 🚨 นำลิงก์ URL ที่ได้ใหม่จากการ Deploy มาวางที่นี่
         const API_URL = "https://script.google.com/macros/s/AKfycbx631E3NkKdEE_oSbz6Fiwi30_s2sf3QiNsobrP7Hy2ZjClRcwo2ngkmVHEX_OUaTaC3A/exec";
         
         let globalData = [];
@@ -237,13 +255,13 @@
 
         function debounceFilter() {
             clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(filterLocalData, 300);
+            searchTimeout = setTimeout(processAndDrawDashboards, 300);
         }
 
         google.charts.load('current', { 'packages': ['geochart'] });
         google.charts.setOnLoadCallback(function() {
             isMapReady = true;
-            if (currentFilteredData.length > 0) drawMapChart(currentFilteredData);
+            if (currentFilteredData.length > 0) processAndDrawDashboards();
         });
 
         $(document).ready(function() {
@@ -257,8 +275,8 @@
             $('#yearFilter').select2();
             $('#gapStatusFilter').select2();
 
-            $('#spkFilter').on('change', function() { updateSpdDropdown(); filterLocalData(); });
-            $('#spdFilter, #yearFilter, #gapStatusFilter').on('change', filterLocalData);
+            $('#spkFilter').on('change', function() { updateSpdDropdown(); processAndDrawDashboards(); });
+            $('#spdFilter, #yearFilter, #gapStatusFilter').on('change', processAndDrawDashboards);
             
             fetchData();
         });
@@ -289,37 +307,25 @@
         async function fetchData() {
             const b = document.getElementById('dataTableBody');
             try {
-                const cachedData = sessionStorage.getItem('gapFastCache');
-                const cacheTime = sessionStorage.getItem('gapFastCacheTime');
-                const now = new Date().getTime();
-
-                if (cachedData && cacheTime && (now - parseInt(cacheTime) < 3600000)) {
-                    globalData = JSON.parse(cachedData);
-                    filterLocalData();
-                    return; 
-                }
-
+                // ผมเอาระบบ Cache ของเบราว์เซอร์ออกไปเลยเพื่อดึงข้อมูลสดๆ จากเซิร์ฟเวอร์ที่เร็วขึ้นแล้ว 
+                // ช่วยป้องกันปัญหาเว็บค้างและมั่นใจว่าได้ข้อมูลใหม่เสมอ
                 const res = await fetch(API_URL);
                 if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+                
                 const textData = await res.text();
                 
-                if (textData.includes("<!DOCTYPE html>") || textData.includes("<html")) throw new Error("SERVER_OVERLOAD");
+                if (textData === "ERROR" || textData.includes("<html")) throw new Error("SERVER_OVERLOAD");
 
-                let raw = JSON.parse(textData);
-                if (raw.error) throw new Error(raw.error);
-
-                globalData = raw;
-
-                try {
-                    sessionStorage.setItem('gapFastCache', JSON.stringify(globalData));
-                    sessionStorage.setItem('gapFastCacheTime', now.toString());
-                } catch (e) {
-                    console.warn("ข้อมูลใหญ่เกินไปสำหรับ Storage");
+                if (textData.trim() !== "") {
+                    const lines = textData.split('\n');
+                    globalData = lines.map(line => line.split('\t'));
+                } else {
+                    globalData = [];
                 }
 
-                filterLocalData();
+                processAndDrawDashboards();
             } catch (e) { 
-                b.innerHTML = `<tr><td colspan="10" style="text-align: center; color: #e74c3c; padding: 30px;"><i class="fa-solid fa-triangle-exclamation"></i> โหลดข้อมูลไม่สำเร็จ กรุณาเช็คอินเทอร์เน็ต</td></tr>`;
+                b.innerHTML = `<tr><td colspan="18" style="text-align: center; color: #e74c3c; padding: 30px;"><i class="fa-solid fa-triangle-exclamation"></i> โหลดข้อมูลไม่สำเร็จ กรุณาตรวจสอบลิงก์ Web App URL</td></tr>`;
             }
         }
 
@@ -333,11 +339,12 @@
             document.getElementById('farmerSearch').value = "";
             
             updateSpdDropdown();
-            filterLocalData();
+            processAndDrawDashboards();
         }
 
-        function filterLocalData() {
+        function processAndDrawDashboards() {
             if(!globalData.length) return;
+            
             const clean = (t) => String(t || "").replace(/\s+/g, '').toLowerCase();
             const fSpk = clean($('#spkFilter').val());
             const fSpd = clean($('#spdFilter').val()).replace('สพด.', '');
@@ -346,89 +353,103 @@
             const sFarmer = String($('#farmerSearch').val() || "").trim().toLowerCase();
             const fGapStatus = $('#gapStatusFilter').val();
 
-            currentFilteredData = globalData.filter(row => {
-                const spkVal = clean(row[0]);
-                const spdVal = clean(row[1]).replace('สพด.', '');
-                const yearVal = clean(row[2]);
+            currentFilteredData = [];
+            let totalAreaRai = 0;
+            let uniqueGroups = new Set();
+            let provinceData = {};
+            let soilCounts = { "เป็น": 0, "ไม่เป็น": 0 };
+            let cropCounts = {};
+
+            for (let i = 0; i < globalData.length; i++) {
+                let row = globalData[i];
+                if (!row || row.length < 18) continue; 
                 
-                const groupVal = String(row[3] || "").toLowerCase();
-                const matchGroup = sGroup === "" || groupVal.includes(sGroup);
+                let spkVal = clean(row[0] || "");
+                let spdValRaw = String(row[1] || "").trim();
+                let spdVal = clean(spdValRaw).replace('สพด.', '');
+                let yearVal = clean(row[7] || "");
+                
+                // คอลัมน์ 6 = ชื่อกลุ่ม
+                let groupValRaw = String(row[6] || "").trim();
+                let groupVal = groupValRaw.toLowerCase();
+                let matchGroup = sGroup === "" || groupVal.includes(sGroup);
 
-                let fullFarmerName = String(row[4] || "") + " " + String(row[5] || "") + " " + String(row[6] || "");
-                const matchFarmer = sFarmer === "" || fullFarmerName.toLowerCase().includes(sFarmer);
+                // คอลัมน์ 4, 5 = คำนำหน้า + ชื่อเกษตรกร
+                let fullFarmerSearch = String(row[4] || "") + " " + String(row[5] || "");
+                let matchFarmer = sFarmer === "" || fullFarmerSearch.toLowerCase().includes(sFarmer);
 
+                let gapValRaw = String(row[16] || ""); 
                 let matchGapStatus = true;
                 if (fGapStatus !== "") {
-                    let gapVal = String(row[9] || "").replace(/\s+/g, '');
-                    if (gapVal === "" || gapVal === "-" || gapVal === "null" || gapVal === "undefined") {
-                        gapVal = "ไม่ระบุ";
-                    }
+                    let gapVal = gapValRaw.replace(/\s+/g, '');
+                    if (gapVal === "" || gapVal === "-" || gapVal === "null" || gapVal === "undefined") gapVal = "ไม่ระบุ";
                     matchGapStatus = gapVal.includes(fGapStatus.replace(/\s+/g, ''));
                 }
 
-                return (fSpk === "" || spkVal === fSpk) && 
-                       (fSpd === "" || spdVal === fSpd) && 
-                       (fYear === "" || yearVal.includes(fYear)) && 
-                       matchGroup && matchFarmer && matchGapStatus;
-            });
+                if ((fSpk === "" || spkVal === fSpk) && 
+                    (fSpd === "" || spdVal === fSpd) && 
+                    (fYear === "" || yearVal.includes(fYear)) && 
+                    matchGroup && matchFarmer && matchGapStatus) {
+                    
+                    currentFilteredData.push(row);
 
-            updateSummaryCards(currentFilteredData);
-            renderTable(currentFilteredData);
-            drawSoilChart(currentFilteredData);
-            drawCropChart(currentFilteredData);
-            
-            if(isMapReady) drawMapChart(currentFilteredData);
-        }
+                    // 1. KPI
+                    if (groupValRaw !== "" && groupValRaw !== "-") uniqueGroups.add(groupValRaw);
+                    
+                    let areaVal = parseFloat(String(row[15] || "0").replace(/,/g, ''));
+                    if (!isNaN(areaVal)) totalAreaRai += areaVal;
 
-        function updateSummaryCards(data) {
-            let totalFarmers = data.length;
-            let uniqueGroups = new Set();
-            let totalAreaRai = 0;
+                    // 2. Map
+                    let provName = spdValRaw.replace('สพด.', '').trim();
+                    if (provName === "" || provName === "-") provName = String(row[13] || "").replace('จ.', '').trim();
+                    
+                    if (provName !== "" && provName !== "-" && provName !== "null" && provinceCodes[provName]) {
+                        if (!provinceData[provName]) provinceData[provName] = { farmers: 0, groups: new Set() };
+                        provinceData[provName].farmers += 1;
+                        if (groupValRaw !== "" && groupValRaw !== "-") provinceData[provName].groups.add(groupValRaw);
+                    }
 
-            data.forEach(r => {
-                let gName = String(r[3] || "").trim(); // 3 = กลุ่ม
-                if (gName !== "" && gName !== "-") uniqueGroups.add(gName);
+                    // 3. Soil Chart
+                    let s = String(row[10] || "").trim();
+                    (s === "" || s === "-" || s === "ไม่เป็น" || s === "null" || s === "undefined") ? soilCounts["ไม่เป็น"]++ : soilCounts["เป็น"]++;
 
-                let areaVal = parseFloat(String(r[8] || "0").replace(/,/g, '')); // 8 = พื้นที่
-                if (!isNaN(areaVal)) totalAreaRai += areaVal;
-            });
+                    // 4. Crop Chart
+                    let p = String(row[14] || "").trim();
+                    if (p === "" || p === "-" || p === "null" || p === "undefined") p = "ไม่ระบุ";
+                    else if (p === "นาข้าว" || p === "ทำนา") p = "ข้าว";
+                    cropCounts[p] = (cropCounts[p] || 0) + 1;
+                }
+            }
 
-            document.getElementById('kpiTotalFarmers').innerText = totalFarmers.toLocaleString();
+            document.getElementById('kpiTotalFarmers').innerText = currentFilteredData.length.toLocaleString();
             document.getElementById('kpiTotalGroups').innerText = uniqueGroups.size.toLocaleString();
             document.getElementById('kpiTotalArea').innerText = totalAreaRai.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2});
+
+            renderTable(currentFilteredData);
+            drawSoilChart(soilCounts);
+            drawCropChart(cropCounts);
+            
+            if(isMapReady) drawMapChart(provinceData);
         }
 
-        function drawMapChart(data) {
-            if (!google.visualization || data.length === 0) return;
-
-            let provinceData = {};
-            data.forEach(r => {
-                let provName = String(r[1] || "").replace('สพด.', '').trim(); // 1 = จังหวัด
-                let groupName = String(r[3] || "").trim(); // 3 = กลุ่ม
-
-                if (provName !== "" && provName !== "-" && provName !== "null" && provinceCodes[provName]) {
-                    if (!provinceData[provName]) {
-                        provinceData[provName] = { farmers: 0, groups: new Set() };
-                    }
-                    provinceData[provName].farmers += 1;
-                    if (groupName !== "" && groupName !== "-") {
-                        provinceData[provName].groups.add(groupName);
-                    }
-                }
-            });
-
+        function drawMapChart(provinceData) {
+            if (!google.visualization) return;
             var dataTable = new google.visualization.DataTable();
             dataTable.addColumn('string', 'Province');
             dataTable.addColumn('number', 'จำนวนราย'); 
             dataTable.addColumn({type: 'string', role: 'tooltip', p: {html: true}}); 
 
+            let hasData = false;
             for (const [prov, stats] of Object.entries(provinceData)) {
-                let groupCount = stats.groups.size;
-                let farmerCount = stats.farmers;
                 let isoCode = provinceCodes[prov];
+                let tooltipHtml = `<div style="padding: 12px; min-width: 150px; font-family: 'Sarabun', Tahoma, sans-serif;"><h4 style="margin: 0 0 8px 0; color: #1b4321; border-bottom: 1px solid #eee; padding-bottom: 5px; font-size: 16px;">📍 จังหวัด${prov}</h4><div style="margin-bottom: 5px; font-size: 14px; color: #333;">🧑‍🌾 เกษตรกร: <b>${stats.farmers.toLocaleString()}</b> ราย</div><div style="font-size: 14px; color: #333;">👥 จำนวนกลุ่ม: <b>${stats.groups.size.toLocaleString()}</b> กลุ่ม</div></div>`;
+                dataTable.addRow([{ v: isoCode, f: prov }, stats.farmers, tooltipHtml]);
+                hasData = true;
+            }
 
-                let tooltipHtml = `<div style="padding: 12px; min-width: 150px; font-family: 'Sarabun', Tahoma, sans-serif;"><h4 style="margin: 0 0 8px 0; color: #1b4321; border-bottom: 1px solid #eee; padding-bottom: 5px; font-size: 16px;">📍 จังหวัด${prov}</h4><div style="margin-bottom: 5px; font-size: 14px; color: #333;">🧑‍🌾 เกษตรกร: <b>${farmerCount.toLocaleString()}</b> ราย</div><div style="font-size: 14px; color: #333;">👥 จำนวนกลุ่ม: <b>${groupCount.toLocaleString()}</b> กลุ่ม</div></div>`;
-                dataTable.addRow([{ v: isoCode, f: prov }, farmerCount, tooltipHtml]);
+            if (!hasData) {
+                document.getElementById('regions_div').innerHTML = '<div style="display:flex; justify-content:center; align-items:center; height:100%; color:#e74c3c;"><i class="fa-solid fa-circle-exclamation" style="margin-right:8px;"></i> ไม่พบข้อมูลแผนที่ (หรืออาจไม่มีการระบุจังหวัด)</div>';
+                return;
             }
 
             var options = { region: 'TH', resolution: 'provinces', colorAxis: { colors: ['#e5f5e0', '#00441b'] }, backgroundColor: 'transparent', datalessRegionColor: '#f0f0f0', tooltip: { isHtml: true } };
@@ -436,12 +457,7 @@
             chart.draw(dataTable, options);
         }
 
-        function drawSoilChart(data) {
-            let counts = { "เป็น": 0, "ไม่เป็น": 0 };
-            data.forEach(r => {
-                let s = String(r[10] || "").trim(); // 10 = หมอดิน
-                (s === "" || s === "-" || s === "ไม่เป็น" || s === "null" || s === "undefined") ? counts["ไม่เป็น"]++ : counts["เป็น"]++;
-            });
+        function drawSoilChart(counts) {
             if (soilChart) soilChart.destroy();
             soilChart = new Chart(document.getElementById('soilDoctorChart'), {
                 type: 'pie',
@@ -450,18 +466,7 @@
             });
         }
 
-        function drawCropChart(data) {
-            let counts = {};
-            data.forEach(r => {
-                let p = String(r[7] || "").trim(); // 7 = พืช
-                if(p === "" || p === "-" || p === "null" || p === "undefined") {
-                    p = "ไม่ระบุ";
-                } else {
-                    if (p === "นาข้าว" || p === "ทำนา") p = "ข้าว";
-                }
-                counts[p] = (counts[p] || 0) + 1;
-            });
-
+        function drawCropChart(counts) {
             let sorted = Object.entries(counts).sort((a,b) => b[1] - a[1]);
             let top10 = sorted.slice(0, 10);
             let othersCount = sorted.slice(10).reduce((acc, curr) => acc + curr[1], 0);
@@ -483,7 +488,7 @@
             const notice = document.getElementById('tableNotice');
 
             if (!data.length) { 
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: red; padding: 30px;"><i class="fa-solid fa-magnifying-glass-minus"></i> ไม่พบข้อมูลที่ตรงกับเงื่อนไขการค้นหา</td></tr>'; 
+                tbody.innerHTML = '<tr><td colspan="18" style="text-align: center; color: red; padding: 30px;"><i class="fa-solid fa-magnifying-glass-minus"></i> ไม่พบข้อมูลที่ตรงกับเงื่อนไขการค้นหา</td></tr>'; 
                 notice.innerHTML = ""; 
                 return; 
             }
@@ -491,29 +496,26 @@
             const limit = 200;
             const displayData = data.slice(0, limit);
             
-            tbody.innerHTML = displayData.map(row => {
-                // 🎯 ลอจิกการยุบรวมชื่อ-นามสกุล
-                let fname = String(row[5] || "").trim();
-                let lname = String(row[6] || "").trim();
-                let fullName = fname;
-                
-                // ถ้านามสกุลไม่ใช่ค่าว่าง, ไม่ใช่ขีด และยังไม่มีอยู่ในชื่อจริง ให้เอามาต่อกัน
-                if (lname !== "" && lname !== "-" && !fname.includes(lname)) {
-                    fullName += " " + lname;
-                }
-                if (fullName === "") fullName = "-";
-
+            tbody.innerHTML = displayData.map(r => {
                 return `<tr>
-                    <td>${row[0] || '-'}</td>
-                    <td>${row[1] || '-'}</td>
-                    <td>${row[2] || '-'}</td>
-                    <td>${row[3] || '-'}</td>
-                    <td>${row[4] || '-'}</td>
-                    <td>${fullName}</td>
-                    <td>${row[7] || '-'}</td>
-                    <td>${row[8] || '-'}</td>
-                    <td>${row[9] || '-'}</td>
-                    <td>${row[10] || '-'}</td>
+                    <td>${r[0] || '-'}</td>
+                    <td>${r[1] || '-'}</td>
+                    <td>${r[2] || '-'}</td>
+                    <td>${r[3] || '-'}</td>
+                    <td>${r[4] || '-'}</td>
+                    <td>${r[5] || '-'}</td>
+                    <td>${r[6] || '-'}</td>
+                    <td>${r[7] || '-'}</td>
+                    <td>${r[8] || '-'}</td>
+                    <td>${r[9] || '-'}</td>
+                    <td>${r[10] || '-'}</td>
+                    <td>${r[11] || '-'}</td>
+                    <td>${r[12] || '-'}</td>
+                    <td>${r[13] || '-'}</td>
+                    <td>${r[14] || '-'}</td>
+                    <td>${r[15] || '-'}</td>
+                    <td>${r[16] || '-'}</td>
+                    <td>${r[17] || '-'}</td>
                 </tr>`;
             }).join('');
             
@@ -527,19 +529,9 @@
         function exportToCSV() {
             if (!currentFilteredData.length) return alert("ไม่มีข้อมูลให้ส่งออก");
             
-            // 🎯 อัปเดตหัวข้อ Excel ให้เป็น ชื่อ-นามสกุล ด้วยเช่นกัน
-            let csv = "\ufeffสังกัด สพข.,จังหวัด สพด.,ปีงบประมาณ,ชื่อกลุ่ม,คำนำหน้า,ชื่อ-นามสกุล,พืชที่ปลูก,พื้นที่ (ไร่),การรับรอง GAP,สถานะหมอดินอาสา\n";
-            currentFilteredData.forEach(row => {
-                let fname = String(row[5] || "").trim();
-                let lname = String(row[6] || "").trim();
-                let fullName = fname;
-                
-                if (lname !== "" && lname !== "-" && !fname.includes(lname)) {
-                    fullName += " " + lname;
-                }
-                if (fullName === "") fullName = "-";
-
-                csv += `"${row[0]}","${row[1]}","${row[2]}","${row[3]}","${row[4]}","${fullName}","${row[7]}","${row[8]}","${row[9]}","${row[10]}"\n`;
+            let csv = "\ufeffสพข.,สพด.,คำนำหน้าผู้รับผิดชอบ,ชื่อผู้รับผิดชอบ,คำนำหน้าเกษตรกร,ชื่อเกษตรกร,ชื่อกลุ่ม,ปีที่เข้าร่วมโครงการฯ,สถานะของกลุ่ม,สถานะในกลุ่มของเกษตรกร,สถานะการเป็นหมอดินอาสา,ตำบล,อำเภอ,จังหวัด,พืชที่ปลูก,พื้นที่ทำการเกษตร (ไร่),การรับรอง GAP,ชนิดพืช GAP\n";
+            currentFilteredData.forEach(r => {
+                csv += `"${r[0]}","${r[1]}","${r[2]}","${r[3]}","${r[4]}","${r[5]}","${r[6]}","${r[7]}","${r[8]}","${r[9]}","${r[10]}","${r[11]}","${r[12]}","${r[13]}","${r[14]}","${r[15]}","${r[16]}","${r[17]}"\n`;
             });
             const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
             const link = document.createElement("a");
