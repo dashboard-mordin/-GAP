@@ -140,7 +140,6 @@
                 </select>
             </div>
 
-            <!-- 🎯 เพิ่มตัวกรองสถานะหมอดินอาสาตรงนี้ -->
             <div>
                 <span class="filter-label"><i class="fa-solid fa-user-doctor"></i> สถานะการเป็นหมอดินอาสา:</span>
                 <select id="soilStatusFilter" class="filter-select">
@@ -170,11 +169,19 @@
             <div class="map-box" id="regions_div">กำลังเตรียมแผนที่...</div>
         </div>
 
+        <!-- 🎯 ปรับให้มีกราฟทั้งหมด 3 อันเรียงกัน (สัดส่วนหมอดิน, การรับรอง GAP, ชนิดพืช) -->
         <div class="charts-wrapper">
             <div class="chart-container-item">
                 <div class="chart-title"><i class="fa-solid fa-chart-pie"></i> สัดส่วนสถานะหมอดินอาสา</div>
                 <div class="chart-box"><canvas id="soilDoctorChart"></canvas></div>
             </div>
+
+            <!-- กราฟใหม่: สัดส่วนการรับรอง GAP -->
+            <div class="chart-container-item">
+                <div class="chart-title"><i class="fa-solid fa-certificate"></i> สัดส่วนการรับรอง GAP</div>
+                <div class="chart-box"><canvas id="gapStatusChart"></canvas></div>
+            </div>
+
             <div class="chart-container-item">
                 <div class="chart-title"><i class="fa-solid fa-chart-bar"></i> ชนิดพืชที่ปลูก (10 อันดับแรก)</div>
                 <div class="chart-box"><canvas id="cropChart"></canvas></div>
@@ -254,12 +261,14 @@
             "อุทัยธานี": "TH-61", "อุบลราชธานี": "TH-34"
         };
 
-        // 🚨 นำลิงก์ URL ของคุณมาวางตรงนี้
+        // 🚨 วาง URL ของคุณตรงนี้
         const API_URL = "https://script.google.com/macros/s/AKfycbx631E3NkKdEE_oSbz6Fiwi30_s2sf3QiNsobrP7Hy2ZjClRcwo2ngkmVHEX_OUaTaC3A/exec";
         
         let globalData = [];
         let currentFilteredData = [];
-        let soilChart = null, cropChart = null;
+        
+        // 🎯 เพิ่มตัวแปรสำหรับกราฟใหม่ gapChart
+        let soilChart = null, gapChart = null, cropChart = null;
         let isMapReady = false; 
         let searchTimeout;
 
@@ -280,7 +289,6 @@
 
             updateSpdDropdown();
 
-            // 🎯 เปิดใช้งาน Select2 ให้กับตัวกรองทั้งหมด รวมถึงตัวใหม่
             $('#spkFilter').select2();
             $('#spdFilter').select2();
             $('#yearFilter').select2();
@@ -319,7 +327,6 @@
         async function fetchData() {
             const b = document.getElementById('dataTableBody');
             try {
-                // ผมเอาระบบ Cache ออกชั่วคราวเพื่อดึงข้อมูลสดๆ จากเซิร์ฟเวอร์
                 const res = await fetch(API_URL);
                 if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
                 
@@ -341,7 +348,6 @@
         }
 
         function clearFilters() {
-            // 🎯 เคลียร์ตัวกรองใหม่ด้วย
             $('#spkFilter').val('').trigger('change.select2');
             $('#spdFilter').val('').trigger('change.select2');
             $('#yearFilter').val('').trigger('change.select2');
@@ -365,13 +371,14 @@
             const sGroup = String($('#groupSearch').val() || "").trim().toLowerCase();
             const sFarmer = String($('#farmerSearch').val() || "").trim().toLowerCase();
             const fGapStatus = $('#gapStatusFilter').val();
-            const fSoilStatus = $('#soilStatusFilter').val(); // 🎯 ดึงค่าจากตัวกรองใหม่
+            const fSoilStatus = $('#soilStatusFilter').val(); 
 
             currentFilteredData = [];
             let totalAreaRai = 0;
             let uniqueGroups = new Set();
             let provinceData = {};
             let soilCounts = { "เป็น": 0, "ไม่เป็น": 0 };
+            let gapCounts = {}; // 🎯 สร้างตัวนับกราฟการรับรอง GAP
             let cropCounts = {};
 
             for (let i = 0; i < globalData.length; i++) {
@@ -391,14 +398,14 @@
                 let matchFarmer = sFarmer === "" || fullFarmerSearch.toLowerCase().includes(sFarmer);
 
                 let gapValRaw = String(row[16] || ""); 
+                let gapValClean = gapValRaw.replace(/\s+/g, '');
+                let gapValCalc = (gapValClean === "" || gapValClean === "-" || gapValClean === "null" || gapValClean === "undefined") ? "ไม่ระบุ" : gapValRaw;
+
                 let matchGapStatus = true;
                 if (fGapStatus !== "") {
-                    let gapVal = gapValRaw.replace(/\s+/g, '');
-                    if (gapVal === "" || gapVal === "-" || gapVal === "null" || gapVal === "undefined") gapVal = "ไม่ระบุ";
-                    matchGapStatus = gapVal.includes(fGapStatus.replace(/\s+/g, ''));
+                    matchGapStatus = gapValClean.includes(fGapStatus.replace(/\s+/g, ''));
                 }
 
-                // 🎯 เช็คเงื่อนไขสถานะหมอดินอาสา (ช่อง 10) ให้ทำงานตรงกับกราฟวงกลม
                 let soilValRaw = String(row[10] || "").trim();
                 let soilValCalc = (soilValRaw === "" || soilValRaw === "-" || soilValRaw === "ไม่เป็น" || soilValRaw === "null" || soilValRaw === "undefined") ? "ไม่เป็น" : "เป็น";
                 
@@ -407,7 +414,6 @@
                     matchSoilStatus = (soilValCalc === fSoilStatus);
                 }
 
-                // นำเงื่อนไข matchSoilStatus มาดักจับการแสดงผลด้วย
                 if ((fSpk === "" || spkVal === fSpk) && 
                     (fSpd === "" || spdVal === fSpd) && 
                     (fYear === "" || yearVal.includes(fYear)) && 
@@ -434,7 +440,10 @@
                     // 3. Soil Chart
                     soilCounts[soilValCalc]++;
 
-                    // 4. Crop Chart
+                    // 4. GAP Chart (🎯 นับสัดส่วนสถานะการรับรอง GAP)
+                    gapCounts[gapValCalc] = (gapCounts[gapValCalc] || 0) + 1;
+
+                    // 5. Crop Chart
                     let p = String(row[14] || "").trim();
                     if (p === "" || p === "-" || p === "null" || p === "undefined") p = "ไม่ระบุ";
                     else if (p === "นาข้าว" || p === "ทำนา") p = "ข้าว";
@@ -448,6 +457,7 @@
 
             renderTable(currentFilteredData);
             drawSoilChart(soilCounts);
+            drawGapChart(gapCounts); // 🎯 วาดกราฟการรับรอง GAP
             drawCropChart(cropCounts);
             
             if(isMapReady) drawMapChart(provinceData);
@@ -484,6 +494,45 @@
                 type: 'pie',
                 data: { labels: Object.keys(counts), datasets: [{ data: Object.values(counts), backgroundColor: ['#2ecc71', '#e67e22'], borderWidth: 1 }] },
                 options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { font: { family: 'Sarabun', size: 14, weight: 'bold' } } }, tooltip: { callbacks: { label: function(context) { let label = context.label || ''; let value = context.raw || 0; let total = context.dataset.data.reduce((a, b) => a + b, 0); let percentage = ((value / total) * 100).toFixed(1); return ` สถานะ${label}หมอดินอาสา: ${value.toLocaleString()} ราย (${percentage}%)`; } } } } }
+            });
+        }
+
+        // 🎯 ฟังก์ชันสำหรับวาดกราฟวงกลมใหม่: สัดส่วนการรับรอง GAP
+        function drawGapChart(counts) {
+            if (gapChart) gapChart.destroy();
+
+            let labels = Object.keys(counts);
+            let data = Object.values(counts);
+            let colors = ['#f1c40f', '#3498db', '#e74c3c', '#95a5a6', '#2ecc71', '#9b59b6'];
+
+            gapChart = new Chart(document.getElementById('gapStatusChart'), {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: data,
+                        backgroundColor: colors.slice(0, labels.length),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'right', labels: { font: { family: 'Sarabun', size: 14, weight: 'bold' } } },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.label || '';
+                                    let value = context.raw || 0;
+                                    let total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    let percentage = ((value / total) * 100).toFixed(1);
+                                    return ` ${label}: ${value.toLocaleString()} ราย (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
             });
         }
 
